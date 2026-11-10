@@ -1,0 +1,77 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Minimi</title>
+  <link rel="stylesheet" href="/style.css" />
+  <!-- Marked.js for markdown rendering -->
+  <script src="https://cdn.jsdelivr.net/npm/marked@14.1.0/marked.min.js"></script>
+  <!-- DOMPurify for sanitizing HTML -->
+  <script src="https://cdn.jsdelivr.net/npm/dompurify@3.1.6/dist/purify.min.js"></script>
+</head>
+<body>
+  <div id="app">
+    <!-- Sidebar -->
+    <aside id="sidebar">
+      <div class="sidebar-header">
+        <h1>minimi</h1>
+        <button id="new-chat-btn" title="New Chat">
+          <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+            <line x1="12" y1="5" x2="12" y2="19"></line>
+            <line x1="5" y1="12" x2="19" y2="12"></line>
+          </svg>
+        </button>
+      </div>
+      <div id="session-list" class="session-list">
+        <!-- Sessions populated by JS -->
+      </div>
+    </aside>
+
+    <!-- Toggle sidebar on mobile -->
+    <button id="sidebar-toggle" class="sidebar-toggle" title="Toggle sidebar">
+      <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+        <line x1="3" y1="6" x2="21" y2="6"></line>
+        <line x1="3" y1="12" x2="21" y2="12"></line>
+        <line x1="3" y1="18" x2="21" y2="18"></line>
+      </svg>
+    </button>
+
+    <!-- Main chat area -->
+    <main id="main">
+      <!-- Welcome screen -->
+      <div id="welcome" class="welcome">
+        <h2>Hey, I'm Minimi.</h2>
+        <p>I can search the web and remember our past conversations. Ask me anything.</p>
+      </div>
+
+      <!-- Messages container -->
+      <div id="messages" class="messages"></div>
+
+      <!-- Input area -->
+      <div class="input-area">
+        <form id="chat-form">
+          <div class="input-wrapper">
+            <textarea
+              id="message-input"
+              placeholder="Ask me anything…"
+              rows="1"
+              autofocus
+            ></textarea>
+            <button type="submit" id="send-btn" title="Send">
+              <svg width="20" height="20" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                <line x1="22" y1="2" x2="11" y2="13"></line>
+                <polygon points="22 2 15 22 11 13 2 9 22 2"></polygon>
+              </svg>
+            </button>
+          </div>
+        </form>
+        <p class="disclaimer">Minimi can make mistakes. Verify important information.</p>
+      </div>
+    </main>
+  </div>
+
+  <script src="/app.js"></script>
+</body>
+</html>
+
