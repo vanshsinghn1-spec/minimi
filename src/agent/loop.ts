@@ -44,9 +44,50 @@ function getClient(): OpenAI {
   return _client;
 }
 
-const MODEL = "gemini-2.0-flash";
+const MODEL = process.env.GEMINI_MODEL || "gemini-3-flash-preview";
 const MAX_TOOL_ITERATIONS = 10;
 const CONTEXT_MESSAGE_LIMIT = 30; // Recent messages to include as context
+
+// ---------------------------------------------------------------------------
+// Helper: chunk text for smooth streaming delivery
+// ---------------------------------------------------------------------------
+
+async function* streamChunks(text: string, chunkSize = 16, delayMs = 12): AsyncGenerator<string> {
+  for (let i = 0; i < text.length; i += chunkSize) {
+    yield text.slice(i, i + chunkSize);
+    if (delayMs > 0) {
+      await new Promise((r) => setTimeout(r, delayMs));
+    }
+  }
+}
+
+// ---------------------------------------------------------------------------
+// Helper: chat completion with automatic retry on rate limit (429)
+// ---------------------------------------------------------------------------
+
+async function createCompletionWithRetry(
+  params: OpenAI.Chat.Completions.ChatCompletionCreateParamsNonStreaming,
+  maxRetries = 3
+): Promise<OpenAI.Chat.Completions.ChatCompletion> {
+  let attempt = 0;
+  while (true) {
+    try {
+      return await getClient().chat.completions.create(params);
+    } catch (err: any) {
+      attempt++;
+      const isRateLimit =
+        err?.status === 429 ||
+        err?.message?.includes("429") ||
+        err?.message?.includes("RESOURCE_EXHAUSTED");
+      if (isRateLimit && attempt <= maxRetries) {
+        const delay = attempt * 2500;
+        await new Promise((r) => setTimeout(r, delay));
+        continue;
+      }
+      throw err;
+    }
+  }
+}
 
 // ---------------------------------------------------------------------------
 // Main agent runner — async generator yielding events
@@ -62,20 +103,42 @@ export async function* runAgent(
   // 2. Load recent conversation history for context
   const history = await getSessionMessages(sessionId, CONTEXT_MESSAGE_LIMIT);
 
-  // 3. Build the messages array for the LLM
-  const systemPrompt = buildSystemPrompt(new Date().toISOString());
+  // 3. Format current date & time for system prompt
+  const now = new Date();
+  const formattedDate = now.toLocaleDateString("en-US", {
+    weekday: "long",
+    year: "numeric",
+    month: "long",
+    day: "numeric",
+  });
+  const timeStr = now.toLocaleTimeString("en-US", {
+    hour: "2-digit",
+    minute: "2-digit",
+    timeZoneName: "short",
+  });
+  const systemPrompt = buildSystemPrompt(
+    `${formattedDate}, ${timeStr} (ISO: ${now.toISOString()})`
+  );
+
+  // 4. Build messages array with timestamp annotations on history
   const llmMessages: OpenAI.Chat.Completions.ChatCompletionMessageParam[] = [
     { role: "system", content: systemPrompt },
-    ...history.map(
+    ...history.slice(0, -1).map(
       (m) =>
         ({
           role: m.role as "user" | "assistant",
-          content: m.content,
+          content: `[${new Date(m.timestamp).toLocaleDateString("en-US", {
+            weekday: "short",
+            year: "numeric",
+            month: "short",
+            day: "numeric",
+          })}] ${m.content}`,
         }) satisfies OpenAI.Chat.Completions.ChatCompletionMessageParam
     ),
+    { role: "user", content: userMessage },
   ];
 
-  // 4. Agent loop — call LLM, execute tools, repeat
+  // 5. Agent loop — call LLM, execute tools, repeat
   let iterations = 0;
   let fullResponse = "";
 
@@ -83,76 +146,26 @@ export async function* runAgent(
     iterations++;
 
     try {
-      const stream = await getClient().chat.completions.create({
+      const response = await createCompletionWithRetry({
         model: MODEL,
         messages: llmMessages,
         tools: toolDefinitions,
-        stream: true,
       });
 
-      // Accumulate streamed response
-      let contentBuffer = "";
-      const toolCalls: {
-        id: string;
-        type: "function";
-        function: { name: string; arguments: string };
-      }[] = [];
-      let finishReason: string | null = null;
-
-      for await (const chunk of stream) {
-        const choice = chunk.choices[0];
-        if (!choice) continue;
-
-        const delta = choice.delta;
-
-        // Accumulate tool calls from deltas
-        if (delta.tool_calls) {
-          for (const tc of delta.tool_calls) {
-            const idx = tc.index;
-            if (!toolCalls[idx]) {
-              toolCalls[idx] = {
-                id: tc.id ?? "",
-                type: "function",
-                function: { name: "", arguments: "" },
-              };
-            }
-            if (tc.id) toolCalls[idx].id = tc.id;
-            if (tc.function?.name)
-              toolCalls[idx].function.name += tc.function.name;
-            if (tc.function?.arguments)
-              toolCalls[idx].function.arguments += tc.function.arguments;
-          }
-        }
-
-        // Stream content chunks to caller
-        if (delta.content) {
-          contentBuffer += delta.content;
-          yield { type: "chunk", data: delta.content };
-        }
-
-        if (choice.finish_reason) {
-          finishReason = choice.finish_reason;
-        }
+      const choice = response.choices[0];
+      if (!choice) {
+        break;
       }
 
-      // Handle tool calls — check both finish_reason and accumulated tool calls
-      if (toolCalls.length > 0) {
-        // Add assistant message with tool calls to context
-        llmMessages.push({
-          role: "assistant",
-          content: contentBuffer || null,
-          tool_calls: toolCalls.map((tc) => ({
-            id: tc.id,
-            type: "function" as const,
-            function: {
-              name: tc.function.name,
-              arguments: tc.function.arguments,
-            },
-          })),
-        });
+      const msg = choice.message;
 
-        // Execute each tool call
-        for (const tc of toolCalls) {
+      // Check if LLM requested tool execution
+      if (msg.tool_calls && msg.tool_calls.length > 0) {
+        // Keep the exact assistant message with tool calls & metadata in context
+        llmMessages.push(msg);
+
+        // Execute each tool
+        for (const tc of msg.tool_calls) {
           const toolName = tc.function.name;
           let args: Record<string, unknown>;
           try {
@@ -161,11 +174,11 @@ export async function* runAgent(
             args = {};
           }
 
-          // Emit status event
+          // Emit status update to the client
           const statusMsg = formatToolStatus(toolName, args);
           yield { type: "status", data: statusMsg };
 
-          // Execute the tool
+          // Execute tool
           let toolResult: string;
           try {
             toolResult = await executeTool(toolName, args);
@@ -175,7 +188,7 @@ export async function* runAgent(
             });
           }
 
-          // Add tool result to context
+          // Feed tool response back to context
           llmMessages.push({
             role: "tool",
             tool_call_id: tc.id,
@@ -183,15 +196,23 @@ export async function* runAgent(
           });
         }
 
-        // Continue the loop — LLM will process tool results
+        // Loop continues so LLM can reason over tool outputs
         continue;
       }
 
-      // No tool calls — we're done
-      fullResponse = contentBuffer;
+      // Final response text generated
+      if (msg.content) {
+        fullResponse = msg.content;
+        for await (const chunk of streamChunks(fullResponse)) {
+          yield { type: "chunk", data: chunk };
+        }
+      }
       break;
     } catch (err) {
-      const errMsg = err instanceof Error ? err.message : String(err);
+      let errMsg = err instanceof Error ? err.message : String(err);
+      if (errMsg.includes("429")) {
+        errMsg = "Gemini API free-tier rate limit reached. Please wait 15–30 seconds and try again.";
+      }
       yield { type: "error", data: errMsg };
       fullResponse = `I encountered an error: ${errMsg}`;
       break;
@@ -199,19 +220,17 @@ export async function* runAgent(
   }
 
   if (iterations >= MAX_TOOL_ITERATIONS) {
-    yield {
-      type: "chunk",
-      data: "\n\n*(Reached maximum tool call limit)*",
-    };
-    fullResponse += "\n\n*(Reached maximum tool call limit)*";
+    const limitNote = "\n\n*(Reached maximum tool call limit)*";
+    yield { type: "chunk", data: limitNote };
+    fullResponse += limitNote;
   }
 
-  // 5. Save assistant response to memory
+  // 6. Save assistant response to memory
   if (fullResponse) {
     await saveMessage(sessionId, "assistant", fullResponse);
   }
 
-  // 6. Auto-generate session title from first exchange
+  // 7. Auto-generate session title if needed
   await maybeSetTitle(sessionId, userMessage);
 
   yield { type: "done", data: "" };
@@ -229,7 +248,7 @@ function formatToolStatus(
     case "web_search": {
       const queries = (args.queries as string[]) ?? [];
       if (queries.length === 1) return `Searching the web for "${queries[0]}"…`;
-      return `Searching the web (${queries.length} queries)…`;
+      return `Searching the web (${queries.length} parallel queries)…`;
     }
     case "recall_memory": {
       const query = args.query as string | undefined;
@@ -253,7 +272,7 @@ async function maybeSetTitle(
   if (messages.length > 2) return;
 
   try {
-    const res = await getClient().chat.completions.create({
+    const res = await createCompletionWithRetry({
       model: MODEL,
       messages: [
         {
