@@ -4,9 +4,15 @@ A high-performance chat agent that searches the web and remembers past conversat
 
 Submitted for the **Minimi Hiring Challenge: Build a Chat Agent**.
 
+🌐 **Live Demo:** [https://minimi-8giv.onrender.com](https://minimi-8giv.onrender.com)  
+📦 **Repository:** [https://github.com/vanshsinghn1-spec/minimi](https://github.com/vanshsinghn1-spec/minimi)
+
 ---
 
 ## Live Demo & Deployment
+
+The agent is deployed live at:  
+👉 **[https://minimi-8giv.onrender.com](https://minimi-8giv.onrender.com)**
 
 ### Option 1: Deploy to Render (Recommended Free Hosting)
 1. Fork or push this repository to GitHub.
