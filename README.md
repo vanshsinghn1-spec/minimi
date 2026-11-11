@@ -1,29 +1,40 @@
-# Minimi — Chat Agent with Web Search & Memory
+# Minimi — Chat Agent with Web Search and Memory
 
-A high-performance chat agent that searches the web and remembers past conversations across sessions. Built with Google Gemini, Tavily Web Search, and SQLite memory store.
+A lightweight, high-performance chat agent that searches the web and maintains conversational memory across sessions. Built for the Minimi hiring challenge.
 
-Submitted for the **Minimi Hiring Challenge: Build a Chat Agent**.
-
-🌐 **Live Demo:** [https://minimi-8giv.onrender.com](https://minimi-8giv.onrender.com)  
-📦 **Repository:** [https://github.com/vanshsinghn1-spec/minimi](https://github.com/vanshsinghn1-spec/minimi)
+- **Live Demo:** [https://minimi-8giv.onrender.com](https://minimi-8giv.onrender.com)
+- **Repository:** [https://github.com/vanshsinghn1-spec/minimi](https://github.com/vanshsinghn1-spec/minimi)
+- **Architecture Document:** [DESIGN.md](./DESIGN.md)
 
 ---
 
-## Live Demo & Deployment
+## Overview
 
-The agent is deployed live at:  
-👉 **[https://minimi-8giv.onrender.com](https://minimi-8giv.onrender.com)**
+Minimi is designed to excel at temporal reasoning, historical context retrieval, and real-time verification. It specifically addresses query patterns where an agent must recall past discussions and cross-reference them with current web data (e.g., verifying whether shortlisted tool pricing or product features have changed since a prior conversation).
 
-### Option 1: Deploy to Render (Recommended Free Hosting)
-1. Fork or push this repository to GitHub.
-2. Go to [Render Dashboard](https://dashboard.render.com/) and click **New +** → **Blueprint** (or **Web Service**).
-3. Connect your repo `minimi`. Render detects `render.yaml` automatically.
-4. Set two environment variables:
-   - `GEMINI_API_KEY`: Your Gemini key
-   - `TAVILY_API_KEY`: Your Tavily key
-5. Click **Deploy**. Your app will be live at `https://your-app.onrender.com`.
+Key capabilities:
+- **Autonomous Tool Invocation:** The agent dynamically decides when to query the live web versus when to retrieve prior conversation history.
+- **Parallel Query Execution:** Batches multiple search queries concurrently when evaluating sets of entities (e.g., comparing multiple vendors or competitors).
+- **Zero-Native Storage Engine:** Employs an in-process SQLite instance via WebAssembly (`sql.js`), guaranteeing clean installation across all operating systems without native build tools (`node-gyp`).
+- **Streaming User Experience:** Delivers incremental responses and intermediate tool statuses via Server-Sent Events (SSE).
 
-### Option 2: Run with Docker
+---
+
+## Live Deployment
+
+The service is deployed on Render and accessible at:
+[https://minimi-8giv.onrender.com](https://minimi-8giv.onrender.com)
+
+### Deploying Your Own Instance
+
+#### Option A: Render Blueprint
+1. Fork or push this repository to your GitHub account.
+2. In the [Render Dashboard](https://dashboard.render.com/), select **New +** > **Blueprint**.
+3. Connect your repository. Render will automatically parse `render.yaml`.
+4. Provide your `GEMINI_API_KEY` and `TAVILY_API_KEY` in the environment configuration prompts.
+5. Click **Apply**.
+
+#### Option B: Docker
 ```bash
 docker build -t minimi .
 docker run -p 3000:3000 --env-file .env minimi
@@ -31,51 +42,85 @@ docker run -p 3000:3000 --env-file .env minimi
 
 ---
 
-## Local Development (Quick Start)
+## Local Development Setup
+
+### Prerequisites
+- Node.js 20 or higher
+- npm 9 or higher
+
+### Installation
 
 ```bash
-# 1. Clone repository
+# 1. Clone the repository
 git clone https://github.com/vanshsinghn1-spec/minimi.git
 cd minimi
 
 # 2. Install dependencies
 npm install
 
-# 3. Configure API keys (both are 100% free)
+# 3. Configure environment variables
 cp .env.example .env
-# Edit .env with your GEMINI_API_KEY and TAVILY_API_KEY
-
-# 4. Start the dev server
-npm run dev
 ```
 
-Open **http://localhost:3000** in your browser.
+Add your API keys to `.env`:
+```env
+GEMINI_API_KEY=your_gemini_api_key_here
+TAVILY_API_KEY=your_tavily_api_key_here
+PORT=3000
+```
+
+### Running the Application
+
+```bash
+# Start the development server with hot-reload
+npm run dev
+
+# Or build and run production bundle
+npm run build
+npm start
+```
+
+Once running, navigate to `http://localhost:3000` in your web browser.
 
 ---
 
-## API Keys (All Free)
+## API Key Provisioning
 
-| Key | Description | Where to get it |
-|-----|-------------|-----------------|
-| `GEMINI_API_KEY` | Reasoning & tool orchestration | [Google AI Studio](https://aistudio.google.com/apikey) — free |
-| `TAVILY_API_KEY` | Real-time web search | [Tavily](https://tavily.com) — free (1,000 searches/mo) |
+Both required services offer free access tiers:
 
----
-
-## Architecture & Design
-
-See [DESIGN.md](./DESIGN.md) for the full 1-page architecture document covering:
-- How it works (streaming tool-calling agent loop, SQLite memory store with temporal reasoning, parallel web searches)
-- Why it was built this way (zero framework overhead, pure-JS SQLite, streaming SSE)
-- Rejected alternatives (LangChain, vector databases, heavy RAG)
-- What we would build with another week
+| Provider | Purpose | Free Quota | Dashboard |
+|---|---|---|---|
+| Google Gemini | Model reasoning & function calling | Free access available | [Google AI Studio](https://aistudio.google.com/apikey) |
+| Tavily Search | Search engine tailored for LLMs | 1,000 searches / month | [Tavily](https://tavily.com) |
 
 ---
 
-## Tech Stack
+## Architecture Summary
 
-- **LLM:** Google Gemini (`gemini-3-flash-preview` / `gemini-2.5-flash` via OpenAI-compatible endpoint)
-- **Web Search:** Tavily AI Search API (parallel multi-query search)
-- **Memory Store:** SQLite via `sql.js` (pure JS/Wasm — zero native C++ compilation, portable across all OSes)
-- **Server:** Express.js + Server-Sent Events (SSE) streaming
-- **Frontend:** Responsive vanilla HTML5/CSS3/JS with Marked.js & DOMPurify
+A detailed breakdown of design trade-offs, rejected approaches, and future roadmap is documented in [DESIGN.md](./DESIGN.md).
+
+```
+[Browser / Client] 
+       │ (SSE Stream)
+       ▼
+[Express Server] ── (Agent Loop) ──▶ [Google Gemini]
+       │                                   │
+       ├─ (Local Query) ──▶ [SQLite Store (sql.js)]
+       │
+       └─ (Parallel HTTP) ─▶ [Tavily Web Search]
+```
+
+- **Loop Architecture:** Avoids heavy agent frameworks (such as LangChain) in favor of a direct, typed, ~120-line orchestration loop using the OpenAI SDK client interface.
+- **Memory Subsystem:** Messages and sessions are indexed with ISO-8601 timestamps. The model receives temporal anchors and can query historical conversations by keyword and date filters.
+- **Rate Limit Resilience:** Built-in exponential backoff handles upstream rate limits (HTTP 429) gracefully without crashing active streams.
+
+---
+
+## Technology Stack
+
+- **Runtime:** Node.js, TypeScript (ES2022)
+- **Model Interface:** Google Gemini (OpenAI-compatible endpoint via `openai` SDK)
+- **Search Provider:** Tavily Search API
+- **Persistence:** SQLite (`sql.js` WebAssembly build)
+- **Server:** Express.js with Server-Sent Events (SSE)
+- **Client:** HTML5, CSS3, vanilla JavaScript, Marked.js, DOMPurify
