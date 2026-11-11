@@ -5,6 +5,7 @@
 import "dotenv/config";
 import express from "express";
 import path from "path";
+import fs from "fs";
 import { fileURLToPath } from "url";
 import { runAgent } from "./agent/loop.js";
 import {
@@ -18,12 +19,20 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const app = express();
 const PORT = parseInt(process.env.PORT ?? "3000", 10);
 
+// Resolve static files directory whether running in dev (src/) or production (dist/)
+const publicDir = [
+  path.join(__dirname, "public"),
+  path.join(__dirname, "../src/public"),
+  path.resolve("src/public"),
+  path.resolve("public"),
+].find((dir) => fs.existsSync(dir)) || path.join(__dirname, "public");
+
 // ---------------------------------------------------------------------------
 // Middleware
 // ---------------------------------------------------------------------------
 
 app.use(express.json());
-app.use(express.static(path.join(__dirname, "public")));
+app.use(express.static(publicDir));
 
 // ---------------------------------------------------------------------------
 // API Routes
@@ -130,7 +139,7 @@ app.post("/api/chat", async (req, res) => {
 // ---------------------------------------------------------------------------
 
 app.get("*", (_req, res) => {
-  res.sendFile(path.join(__dirname, "public", "index.html"));
+  res.sendFile(path.join(publicDir, "index.html"));
 });
 
 // ---------------------------------------------------------------------------

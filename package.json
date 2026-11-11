@@ -5,7 +5,7 @@
   "type": "module",
   "scripts": {
     "dev": "tsx watch src/index.ts",
-    "build": "tsc",
+    "build": "tsc && node -e \"const fs = require('fs'); fs.cpSync('src/public', 'dist/public', { recursive: true });\"",
     "start": "node dist/index.js"
   },
   "dependencies": {
